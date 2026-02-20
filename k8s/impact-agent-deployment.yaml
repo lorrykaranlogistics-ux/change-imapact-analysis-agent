@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: impact-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: impact-agent
+  template:
+    metadata:
+      labels:
+        app: impact-agent
+    spec:
+      containers:
+      - name: impact-agent
+        image: impact-agent:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: JWT_SECRET
+          value: "super-secret-demo-key"
+        - name: OPENAI_API_KEY
+          value: ""
+        - name: MYSQL_URL
+          value: "mysql+pymysql://impact:impact@mysql:3306/impactdb"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: impact-agent-svc
+spec:
+  selector:
+    app: impact-agent
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP

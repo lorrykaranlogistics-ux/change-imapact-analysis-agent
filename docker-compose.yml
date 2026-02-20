@@ -1,0 +1,32 @@
+version: '3.9'
+services:
+  impact-agent:
+    build: .
+    container_name: impact-agent
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ../sample-microservices-node:/app/sample-microservices-node:ro
+    depends_on:
+      - mysql
+      - redis
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: impactdb
+      MYSQL_USER: impact
+      MYSQL_PASSWORD: impact
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+volumes:
+  mysql_data:
