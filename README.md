@@ -37,7 +37,7 @@ curl -s -X POST http://localhost:8000/analyze-pr \
   -d '{"repo_url":"https://github.com/example/sample-microservices-node","pr_number":24,"use_llm":true}'
 ```
 
-## Enterprise Notes
+## Notes
 
 - PR retrieval is deterministic for demo with `sample-microservices-node/sample-pr/pr-24.patch`.
 - Dependency graph is computed from real JS import relationships using NetworkX.
