@@ -17,6 +17,8 @@ class AnalyzePRRequest(BaseModel):
     repo_url: HttpUrl
     pr_number: int = Field(gt=0)
     use_llm: bool = True
+    run_regression_tests: bool = True
+    github_token: Optional[str] = Field(default=None, min_length=1)
 
 
 class ChangedFile(BaseModel):
@@ -59,3 +61,5 @@ class AnalysisResponse(BaseModel):
     confidence: float
     changeClassification: Dict[str, Any]
     dependencyDepth: int
+    sanityCheckResults: Dict[str, Any]
+    regressionTestResults: Dict[str, Any]

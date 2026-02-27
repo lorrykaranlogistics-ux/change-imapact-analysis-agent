@@ -1,9 +1,12 @@
 import json
+import logging
 from typing import Any, Dict, List
 
 from openai import OpenAI
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class LLMAgent:
@@ -57,36 +60,40 @@ class LLMAgent:
             },
         }
 
-        response = self.client.chat.completions.create(
-            model=settings.openai_model,
-            temperature=0.1,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an enterprise DevOps impact analysis model. Always use the function call.",
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.openai_model,
+                temperature=0.1,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an enterprise DevOps impact analysis model. Always use the function call.",
+                    },
+                    {"role": "user", "content": json.dumps(prompt)},
+                ],
+                tools=[tool_schema],
+                tool_choice={"type": "function", "function": {"name": "impact_assessment"}},
+            )
+
+            tool_calls = response.choices[0].message.tool_calls
+            if not tool_calls:
+                return fallback
+
+            args = json.loads(tool_calls[0].function.arguments)
+            return {
+                "classification": {
+                    "breakingChange": args["breakingChange"],
+                    "schemaChange": args["schemaChange"],
+                    "logicChange": args["logicChange"],
+                    "configChange": args["configChange"],
                 },
-                {"role": "user", "content": json.dumps(prompt)},
-            ],
-            tools=[tool_schema],
-            tool_choice={"type": "function", "function": {"name": "impact_assessment"}},
-        )
-
-        tool_calls = response.choices[0].message.tool_calls
-        if not tool_calls:
+                "riskLevel": args["riskLevel"],
+                "regressionAreas": args["regressionAreas"],
+                "suggestedTests": args["suggestedTests"],
+            }
+        except Exception as exc:
+            logger.warning("LLM unavailable, using heuristic fallback", extra={"error": str(exc)})
             return fallback
-
-        args = json.loads(tool_calls[0].function.arguments)
-        return {
-            "classification": {
-                "breakingChange": args["breakingChange"],
-                "schemaChange": args["schemaChange"],
-                "logicChange": args["logicChange"],
-                "configChange": args["configChange"],
-            },
-            "riskLevel": args["riskLevel"],
-            "regressionAreas": args["regressionAreas"],
-            "suggestedTests": args["suggestedTests"],
-        }
 
     def _heuristic_predict(
         self,
@@ -102,7 +109,7 @@ class LLMAgent:
         breaking = "required" in lower_diff or "remove" in lower_diff
 
         risk = "LOW"
-        if schema_change or len(graph_result.get("impacted_services", [])) >= 3:
+        if schema_change or len(graph_result.get("impacted_services", [])) >= 2:
             risk = "MEDIUM"
         if schema_change and logic_change and "payment-service" in graph_result.get("impacted_services", []):
             risk = "HIGH"
@@ -128,3 +135,12 @@ class LLMAgent:
             "regressionAreas": regression_areas,
             "suggestedTests": suggested_tests,
         }
+
+    def predict_heuristic(
+        self,
+        pr_diff: str,
+        graph_result: Dict[str, Any],
+        changed_files: List[str],
+        commit_messages: List[str],
+    ) -> Dict[str, Any]:
+        return self._heuristic_predict(pr_diff, graph_result, changed_files, commit_messages)
