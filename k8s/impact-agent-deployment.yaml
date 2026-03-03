@@ -20,7 +20,7 @@ spec:
         env:
         - name: JWT_SECRET
           value: "super-secret-demo-key"
-        - name: OPENAI_API_KEY
+        - name: GEMINI_API_KEY
           value: ""
         - name: MYSQL_URL
           value: "mysql+pymysql://impact:impact@mysql:3306/impactdb"

@@ -16,8 +16,15 @@ from app.agents.llm_agent import LLMAgent
 from app.agents.risk_engine import RiskEngine
 from app.config import settings
 from app.db.database import Base, SessionLocal, engine
-from app.db.models import AnalysisHistory
-from app.models.schemas import AnalyzePRRequest, AnalysisResponse, LoginRequest, LoginResponse
+from app.db.models import AnalysisHistory, ProjectSettings
+from app.models.schemas import (
+    AnalyzePRRequest,
+    AnalysisResponse,
+    LoginRequest,
+    LoginResponse,
+    ProjectSettingsResponse,
+    ProjectSettingsUpsertRequest,
+)
 from app.services.dependency_parser import DependencyParser
 from app.services.github_service import GitHubService
 from app.services.graph_engine import GraphEngine
@@ -106,6 +113,55 @@ def login(payload: LoginRequest) -> LoginResponse:
     return LoginResponse(access_token=token)
 
 
+@app.get("/project-settings", response_model=ProjectSettingsResponse)
+def get_project_settings(user: str = Depends(get_current_user)) -> ProjectSettingsResponse:
+    db = SessionLocal()
+    try:
+        settings_row = db.get(ProjectSettings, 1)
+        if not settings_row:
+            return ProjectSettingsResponse(project_name="", github_token=None)
+        return ProjectSettingsResponse(
+            project_name=settings_row.project_name,
+            github_token=settings_row.github_token,
+        )
+    finally:
+        db.close()
+
+
+@app.put("/project-settings", response_model=ProjectSettingsResponse)
+def upsert_project_settings(
+    payload: ProjectSettingsUpsertRequest, user: str = Depends(get_current_user)
+) -> ProjectSettingsResponse:
+    project_name = payload.project_name.strip()
+    github_token = payload.github_token.strip() if payload.github_token else None
+    if github_token == "":
+        github_token = None
+
+    db = SessionLocal()
+    try:
+        settings_row = db.get(ProjectSettings, 1)
+        if not settings_row:
+            settings_row = ProjectSettings(id=1, project_name=project_name, github_token=github_token)
+            db.add(settings_row)
+        else:
+            settings_row.project_name = project_name
+            settings_row.github_token = github_token
+        db.commit()
+        return ProjectSettingsResponse(
+            project_name=settings_row.project_name,
+            github_token=settings_row.github_token,
+        )
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error("Failed to persist project settings", extra={"error": str(exc)})
+        raise HTTPException(
+            status_code=500,
+            detail={"message": "Failed to store project settings", "code": "db_write_failed"},
+        ) from exc
+    finally:
+        db.close()
+
+
 @app.post("/analyze-pr", response_model=AnalysisResponse)
 @limiter.limit(settings.rate_limit)
 def analyze_pr(request: Request, payload: AnalyzePRRequest, user: str = Depends(get_current_user)) -> AnalysisResponse:
@@ -118,6 +174,15 @@ def analyze_pr(request: Request, payload: AnalyzePRRequest, user: str = Depends(
         raise HTTPException(status_code=exc.status_code, detail={"message": exc.message, "code": exc.code}) from exc
     changed_file_items = _sanity_check_pr_data(pr_data)
     changed_files = [f["path"] for f in changed_file_items]
+    changed_files_report = [
+        {
+            "filename": f["path"],
+            "status": "modified",
+            "additions": f.get("additions", 0),
+            "deletions": f.get("deletions", 0),
+        }
+        for f in changed_file_items
+    ]
     diff_blob = "\n".join([f.get("patch", "") or "" for f in changed_file_items])
 
     node_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sample-microservices-node"))
@@ -154,7 +219,7 @@ def analyze_pr(request: Request, payload: AnalyzePRRequest, user: str = Depends(
 
     result = {
         "prNumber": payload.pr_number,
-        "changedFiles": changed_files,
+        "changedFiles": changed_files_report,
         "impactedServices": graph_result["impacted_services"],
         "regressionAreas": llm_result["regressionAreas"],
         "suggestedTests": llm_result["suggestedTests"],
@@ -167,7 +232,11 @@ def analyze_pr(request: Request, payload: AnalyzePRRequest, user: str = Depends(
         "regressionTestResults": regression_test_service.skipped("set run_regression_tests=true to execute"),
     }
     if payload.run_regression_tests:
-        result["regressionTestResults"] = regression_test_service.run()
+        result["regressionTestResults"] = regression_test_service.run(
+            repo_url=str(payload.repo_url),
+            pr_number=payload.pr_number,
+            github_token=payload.github_token,
+        )
 
     db = SessionLocal()
     try:

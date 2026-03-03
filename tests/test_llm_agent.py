@@ -1,17 +1,9 @@
 from app.agents.llm_agent import LLMAgent
 
 
-class _RaisingCompletions:
-    def create(self, **kwargs):
-        raise RuntimeError("quota exceeded")
-
-
-class _RaisingChat:
-    completions = _RaisingCompletions()
-
-
 class _RaisingClient:
-    chat = _RaisingChat()
+    def post(self, *args, **kwargs):
+        raise RuntimeError("quota exceeded")
 
 
 def test_predict_falls_back_when_llm_call_fails():

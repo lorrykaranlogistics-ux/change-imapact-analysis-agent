@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any, Dict, List
 
-from openai import OpenAI
+import httpx
 
 from app.config import settings
 
@@ -11,7 +11,10 @@ logger = logging.getLogger(__name__)
 
 class LLMAgent:
     def __init__(self) -> None:
-        self.client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        self.api_key = settings.gemini_api_key.strip()
+        self.model = settings.gemini_model
+        self.api_base_url = settings.gemini_api_base_url.rstrip("/")
+        self.client = httpx.Client(timeout=settings.gemini_timeout_seconds) if self.api_key else None
 
     def predict(
         self,
@@ -31,55 +34,40 @@ class LLMAgent:
             "diff": pr_diff[:12000],
         }
 
-        tool_schema = {
-            "type": "function",
-            "function": {
-                "name": "impact_assessment",
-                "description": "Classify change risk and suggest regression tests",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "breakingChange": {"type": "boolean"},
-                        "schemaChange": {"type": "boolean"},
-                        "logicChange": {"type": "boolean"},
-                        "configChange": {"type": "boolean"},
-                        "riskLevel": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH"]},
-                        "regressionAreas": {"type": "array", "items": {"type": "string"}},
-                        "suggestedTests": {"type": "array", "items": {"type": "string"}},
-                    },
-                    "required": [
-                        "breakingChange",
-                        "schemaChange",
-                        "logicChange",
-                        "configChange",
-                        "riskLevel",
-                        "regressionAreas",
-                        "suggestedTests",
-                    ],
-                },
-            },
-        }
-
         try:
-            response = self.client.chat.completions.create(
-                model=settings.openai_model,
-                temperature=0.1,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an enterprise DevOps impact analysis model. Always use the function call.",
+            response = self.client.post(
+                f"{self.api_base_url}/models/{self.model}:generateContent",
+                params={"key": self.api_key},
+                json={
+                    "contents": [
+                        {
+                            "parts": [
+                                {
+                                    "text": (
+                                        "You are an enterprise DevOps impact analysis model. "
+                                        "Return strict JSON with this shape only: "
+                                        '{"breakingChange": boolean, "schemaChange": boolean, "logicChange": boolean, '
+                                        '"configChange": boolean, "riskLevel": "LOW"|"MEDIUM"|"HIGH", '
+                                        '"regressionAreas": string[], "suggestedTests": string[]}.\n\n'
+                                        f"Input:\n{json.dumps(prompt)}"
+                                    )
+                                }
+                            ]
+                        }
+                    ],
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "responseMimeType": "application/json",
                     },
-                    {"role": "user", "content": json.dumps(prompt)},
-                ],
-                tools=[tool_schema],
-                tool_choice={"type": "function", "function": {"name": "impact_assessment"}},
+                },
             )
-
-            tool_calls = response.choices[0].message.tool_calls
-            if not tool_calls:
+            response.raise_for_status()
+            response_json = response.json()
+            raw_text = self._extract_response_text(response_json)
+            if not raw_text:
                 return fallback
 
-            args = json.loads(tool_calls[0].function.arguments)
+            args = json.loads(raw_text)
             return {
                 "classification": {
                     "breakingChange": args["breakingChange"],
@@ -94,6 +82,15 @@ class LLMAgent:
         except Exception as exc:
             logger.warning("LLM unavailable, using heuristic fallback", extra={"error": str(exc)})
             return fallback
+
+    def _extract_response_text(self, payload: Dict[str, Any]) -> str:
+        candidates = payload.get("candidates") or []
+        if not candidates:
+            return ""
+        content = candidates[0].get("content") or {}
+        parts = content.get("parts") or []
+        texts = [part.get("text", "") for part in parts if isinstance(part, dict)]
+        return "\n".join([t for t in texts if t]).strip()
 
     def _heuristic_predict(
         self,

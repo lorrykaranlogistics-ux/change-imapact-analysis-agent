@@ -21,11 +21,28 @@ class AnalyzePRRequest(BaseModel):
     github_token: Optional[str] = Field(default=None, min_length=1)
 
 
+class ProjectSettingsUpsertRequest(BaseModel):
+    project_name: str = Field(min_length=1, max_length=255)
+    github_token: Optional[str] = Field(default=None, max_length=1024)
+
+
+class ProjectSettingsResponse(BaseModel):
+    project_name: str
+    github_token: Optional[str] = None
+
+
 class ChangedFile(BaseModel):
     path: str
     additions: int
     deletions: int
     patch: Optional[str] = None
+
+
+class ChangedFileReportItem(BaseModel):
+    filename: str
+    status: str = "modified"
+    additions: int = 0
+    deletions: int = 0
 
 
 class PRData(BaseModel):
@@ -52,7 +69,7 @@ class RiskScore(BaseModel):
 
 class AnalysisResponse(BaseModel):
     prNumber: int
-    changedFiles: List[str]
+    changedFiles: List[ChangedFileReportItem]
     impactedServices: List[str]
     regressionAreas: List[str]
     suggestedTests: List[str]

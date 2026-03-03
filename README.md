@@ -10,11 +10,18 @@ docker compose up --build
 
 ## Environment Variables
 
-- `OPENAI_API_KEY`: Optional. If omitted, deterministic heuristic reasoning is used.
-- `OPENAI_MODEL`: Default `gpt-4o-mini`
+- `GEMINI_API_KEY`: Optional. If omitted, deterministic heuristic reasoning is used.
+- `GEMINI_MODEL`: Default `gemini-1.5-flash`
+- `GEMINI_API_BASE_URL`: Default `https://generativelanguage.googleapis.com/v1beta`
+- `GEMINI_TIMEOUT_SECONDS`: Default `30`
 - `GITHUB_TOKEN`: Optional PAT for private repo access and higher GitHub API limits
 - `GITHUB_API_BASE_URL`: Default `https://api.github.com`
 - `GITHUB_API_TIMEOUT_SECONDS`: Default `25`
+- `GITHUB_WORKFLOW_FILE`: GitHub Actions workflow file to dispatch for regression checks. Default `regression-dispatch.yml`
+- `GITHUB_WORKFLOW_REF`: Branch/tag ref used for workflow dispatch. Default `master`
+- `GITHUB_WORKFLOW_LOOKUP_TIMEOUT_SECONDS`: Wait time for workflow run creation. Default `60`
+- `GITHUB_WORKFLOW_TIMEOUT_SECONDS`: Wait time for workflow completion. Default `420`
+- `GITHUB_WORKFLOW_POLL_SECONDS`: Poll interval for workflow status checks. Default `5`
 - `JWT_SECRET`: JWT signing secret
 - `MYSQL_URL`: SQLAlchemy connection URL
 - `REDIS_URL`: Redis connection URL
@@ -58,8 +65,8 @@ curl -s -X POST http://localhost:8000/analyze-pr \
 - Risk scoring combines code churn, dependency depth, core-service multiplier, and LLM severity.
 - Structured analysis history is persisted to MySQL.
 - Analyze flow includes sanity checks for PR payload and graph output.
-- LLM quota/API failures automatically fall back to heuristic reasoning.
-- Response includes `sanityCheckResults` and `regressionTestResults`; set `run_regression_tests=true` to execute pytest during analysis.
+- Gemini quota/API failures automatically fall back to heuristic reasoning.
+- Response includes `sanityCheckResults` and `regressionTestResults`; set `run_regression_tests=true` to dispatch GitHub Actions regression tests (falls back to local pytest when dispatch is skipped).
 
 ## Regression Tests
 
