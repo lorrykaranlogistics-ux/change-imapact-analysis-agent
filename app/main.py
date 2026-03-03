@@ -105,6 +105,40 @@ def _sanity_check_graph_result(graph_result: Dict[str, Any]) -> None:
         )
 
 
+def _risk_level_rank(level: str) -> int:
+    mapping = {"LOW": 1, "MEDIUM": 2, "HIGH": 3}
+    return mapping.get(level.upper(), 1)
+
+
+def _risk_level_from_score(score: int) -> str:
+    if score >= 75:
+        return "HIGH"
+    if score >= 40:
+        return "MEDIUM"
+    return "LOW"
+
+
+def _apply_regression_signal(
+    risk_score: int,
+    risk_level: str,
+    regression_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    status = str(regression_result.get("status", "SKIPPED")).upper()
+    penalty_by_status = {
+        "PASSED": 0,
+        "SKIPPED": 0,
+        "FAILED": 20,
+        "TIMEOUT": 25,
+    }
+    penalty = penalty_by_status.get(status, 10)
+    adjusted_score = max(1, min(100, risk_score + penalty))
+    score_based_level = _risk_level_from_score(adjusted_score)
+    adjusted_level = score_based_level
+    if _risk_level_rank(score_based_level) < _risk_level_rank(risk_level):
+        adjusted_level = risk_level
+    return {"riskScore": adjusted_score, "riskLevel": adjusted_level}
+
+
 @app.post("/auth/login", response_model=LoginResponse)
 def login(payload: LoginRequest) -> LoginResponse:
     if payload.username != "admin" or payload.password != "admin123":
@@ -185,8 +219,20 @@ def analyze_pr(request: Request, payload: AnalyzePRRequest, user: str = Depends(
     ]
     diff_blob = "\n".join([f.get("patch", "") or "" for f in changed_file_items])
 
-    node_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sample-microservices-node"))
-    dep_map, services = parser.parse_project(node_root)
+    configured_root = settings.microservices_project_path.strip()
+    default_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../microservices-project"))
+    node_root = configured_root or default_root
+
+    dep_map: Dict[str, List[str]] = {}
+    services: set[str] = set()
+    if os.path.isdir(node_root):
+        try:
+            dep_map, services = parser.parse_project(node_root)
+        except Exception as exc:
+            logger.warning("Dependency parser failed; continuing with empty graph", extra={"error": str(exc)})
+    else:
+        logger.info("Microservices project path not found; continuing with empty graph", extra={"path": node_root})
+
     graph_engine.build_graph(dep_map, services)
     graph_result = graph_engine.analyze_impact(changed_files)
     _sanity_check_graph_result(graph_result)
@@ -237,6 +283,13 @@ def analyze_pr(request: Request, payload: AnalyzePRRequest, user: str = Depends(
             pr_number=payload.pr_number,
             github_token=payload.github_token,
         )
+        adjusted = _apply_regression_signal(
+            risk_score=result["riskScore"],
+            risk_level=result["riskLevel"],
+            regression_result=result["regressionTestResults"],
+        )
+        result["riskScore"] = adjusted["riskScore"]
+        result["riskLevel"] = adjusted["riskLevel"]
 
     db = SessionLocal()
     try:

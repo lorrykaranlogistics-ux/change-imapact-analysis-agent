@@ -262,3 +262,86 @@ def test_analyze_pr_passes_repo_context_to_regression_runner(monkeypatch):
         "pr_number": 7,
         "github_token": "ghp_abc123",
     }
+
+
+def test_analyze_pr_increases_risk_when_regression_fails(monkeypatch):
+    import app.main as main_mod
+
+    monkeypatch.setattr(main_mod.Base.metadata, "create_all", lambda bind: None)
+    monkeypatch.setattr(main_mod, "SessionLocal", lambda: _DummyDB())
+    monkeypatch.setattr(
+        main_mod.github_service,
+        "fetch_pr_data",
+        lambda repo_url, pr_number, github_token=None: {
+            "pr_number": pr_number,
+            "title": "demo",
+            "body": "demo",
+            "commit_messages": ["feat: change"],
+            "changed_files": [
+                {
+                    "path": "payment-service/src/controllers/paymentController.js",
+                    "additions": 10,
+                    "deletions": 2,
+                    "patch": "+validate\\n-if (x)",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(main_mod.parser, "parse_project", lambda _root: ({}, ["payment-service"]))
+    monkeypatch.setattr(main_mod.graph_engine, "build_graph", lambda dep_map, services: None)
+    monkeypatch.setattr(
+        main_mod.graph_engine,
+        "analyze_impact",
+        lambda changed_files: {
+            "impacted_services": ["payment-service"],
+            "dependency_depth": 0,
+            "upstream_dependencies": [],
+            "downstream_dependencies": [],
+            "cross_service_impacts": {},
+        },
+    )
+    monkeypatch.setattr(
+        main_mod.llm_agent,
+        "predict_heuristic",
+        lambda pr_diff, graph_result, changed_files, commit_messages: {
+            "classification": {
+                "breakingChange": False,
+                "schemaChange": False,
+                "logicChange": True,
+                "configChange": False,
+            },
+            "riskLevel": "LOW",
+            "regressionAreas": ["payment flow"],
+            "suggestedTests": ["payment validation test"],
+        },
+    )
+    monkeypatch.setattr(
+        main_mod.regression_test_service,
+        "run",
+        lambda repo_url=None, pr_number=None, github_token=None: {
+            "status": "FAILED",
+            "command": "github-actions:acme/repo",
+            "summary": {"passed": 0, "failed": 1, "errors": 0, "skipped": 0},
+            "durationSeconds": 3.0,
+            "outputSnippet": "failed",
+        },
+    )
+
+    with TestClient(app) as client:
+        res = client.post(
+            "/analyze-pr",
+            headers={**_auth_headers(), "Content-Type": "application/json"},
+            json={
+                "repo_url": "https://github.com/acme/private-repo",
+                "pr_number": 8,
+                "use_llm": False,
+                "run_regression_tests": True,
+                "github_token": "ghp_abc123",
+            },
+        )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["regressionTestResults"]["status"] == "FAILED"
+    assert body["riskScore"] >= 20
+    assert body["riskLevel"] in {"LOW", "MEDIUM", "HIGH"}

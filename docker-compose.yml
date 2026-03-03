@@ -7,8 +7,6 @@ services:
       - "8000:8000"
     env_file:
       - .env
-    volumes:
-      - ../sample-microservices-node:/app/sample-microservices-node:ro
     depends_on:
       - mysql
       - redis

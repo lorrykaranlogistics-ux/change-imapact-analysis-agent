@@ -8,6 +8,15 @@ cp .env.example .env
 docker compose up --build
 ```
 
+## Quick Start
+
+```bash
+./bootstrap.sh
+./healthcheck.sh
+```
+
+This project runs standalone. Cloning the microservices repo locally is optional.
+
 ## Environment Variables
 
 - `GEMINI_API_KEY`: Optional. If omitted, deterministic heuristic reasoning is used.
@@ -22,6 +31,7 @@ docker compose up --build
 - `GITHUB_WORKFLOW_LOOKUP_TIMEOUT_SECONDS`: Wait time for workflow run creation. Default `60`
 - `GITHUB_WORKFLOW_TIMEOUT_SECONDS`: Wait time for workflow completion. Default `420`
 - `GITHUB_WORKFLOW_POLL_SECONDS`: Poll interval for workflow status checks. Default `5`
+- `MICROSERVICES_PROJECT_PATH`: Optional absolute path to a local microservices repo for dependency-graph enrichment and local demo patch support.
 - `JWT_SECRET`: JWT signing secret
 - `MYSQL_URL`: SQLAlchemy connection URL
 - `REDIS_URL`: Redis connection URL
@@ -44,7 +54,7 @@ TOKEN="<paste-token>"
 curl -s -X POST http://localhost:8000/analyze-pr \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"repo_url":"https://github.com/example/sample-microservices-node","pr_number":24,"use_llm":false,"run_regression_tests":false}'
+  -d '{"repo_url":"https://github.com/example/microservices-project","pr_number":24,"use_llm":false,"run_regression_tests":false}'
 ```
 
 3. Analyze private repo:
@@ -59,7 +69,7 @@ curl -s -X POST http://localhost:8000/analyze-pr \
 
 ## Notes
 
-- PR retrieval is deterministic for demo with `sample-microservices-node/sample-pr/pr-24.patch`.
+- PR retrieval is deterministic for demo with `microservices-project/sample-pr/pr-24.patch`.
 - For non-demo PRs, service uses GitHub API first, then git ref fallback.
 - Dependency graph is computed from real JS import relationships using NetworkX.
 - Risk scoring combines code churn, dependency depth, core-service multiplier, and LLM severity.

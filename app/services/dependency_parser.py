@@ -6,6 +6,7 @@ IMPORT_PATTERNS = [
     re.compile(r"require\(['\"]([^'\"]+)['\"]\)"),
     re.compile(r"from\s+['\"]([^'\"]+)['\"]"),
 ]
+SERVICE_CALL_PATTERN = re.compile(r"http://([a-z0-9-]+):\d+", re.IGNORECASE)
 
 
 class DependencyParser:
@@ -25,15 +26,17 @@ class DependencyParser:
                 if service in {"sample-pr", ".github", "k8s"}:
                     continue
                 services.add(service)
-                imports = self._extract_imports(full_path)
+                imports = self._extract_imports_and_calls(full_path)
                 dep_map[rel_path] = imports
 
         return dep_map, services
 
-    def _extract_imports(self, file_path: str) -> List[str]:
+    def _extract_imports_and_calls(self, file_path: str) -> List[str]:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
         imports: List[str] = []
         for pattern in IMPORT_PATTERNS:
             imports.extend(pattern.findall(content))
+        for svc in SERVICE_CALL_PATTERN.findall(content):
+            imports.append(f"service://{svc.lower()}")
         return imports

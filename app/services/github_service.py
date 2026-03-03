@@ -28,8 +28,11 @@ class GitHubService:
     def fetch_pr_data(self, repo_url: str, pr_number: int, github_token: Optional[str] = None) -> Dict:
         owner, repo = self._parse_repo_url(repo_url)
         # Demo-first implementation: reads from local sample PR artifact for reproducibility.
+        microservices_root = settings.microservices_project_path.strip() or os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "../../../microservices-project")
+        )
         local_pr_patch = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "../../../sample-microservices-node/sample-pr/pr-24.patch")
+            os.path.join(microservices_root, "sample-pr/pr-24.patch")
         )
         if pr_number == 24 and os.path.exists(local_pr_patch):
             return self._from_local_patch(local_pr_patch, pr_number)

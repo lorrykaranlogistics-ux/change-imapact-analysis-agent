@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     github_workflow_lookup_timeout_seconds: int = 60
     github_workflow_timeout_seconds: int = 420
     github_workflow_poll_seconds: int = 5
+    microservices_project_path: str = ""
 
     mysql_url: str = "mysql+pymysql://impact:impact@localhost:3306/impactdb"
     redis_url: str = "redis://localhost:6379/0"

@@ -9,12 +9,18 @@ class GraphEngine:
         self.graph = nx.DiGraph()
 
     def build_graph(self, dep_map: Dict[str, List[str]], services: Set[str]) -> nx.DiGraph:
+        self.graph.clear()
         for service in services:
             self.graph.add_node(service)
 
         for file_path, imports in dep_map.items():
             source_service = file_path.split("/")[0]
             for imp in imports:
+                if imp.startswith("service://"):
+                    target = imp.replace("service://", "", 1)
+                    if target in services and target != source_service:
+                        self.graph.add_edge(source_service, target)
+                    continue
                 for candidate in services:
                     if candidate in imp and candidate != source_service:
                         self.graph.add_edge(source_service, candidate)
